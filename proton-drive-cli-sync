@@ -1,0 +1,5 @@
+#!/bin/bash
+export PROTON_DRIVE_CREDENTIALS_STORE=unsafe_file
+export PROTON_DRIVE_CACHE_DIR="/mnt/Datapool/home/st0retron/proton-drive-cli/session"
+exec "/mnt/Datapool/home/st0retron/proton-drive-cli/proton-drive" "$@"
+

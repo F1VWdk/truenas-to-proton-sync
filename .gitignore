@@ -1,0 +1,18 @@
+# runtime state
+*.db
+current_*.txt
+changed_*.txt
+deleted_*.txt
+new_folders.txt
+*.log
+pd_cli_temp.log
+find_error.log
+sqlite_error.log
+
+# local / sensitive
+excluded.txt
+test_script.sh
+.env
+*.local
+
+sync_config.cfg
