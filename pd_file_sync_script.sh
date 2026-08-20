@@ -28,6 +28,9 @@
 #   v9.1:
 #       - Centralized logging variables into sync_config.cfg
 #       - Sanitized proton-drive-cli-sync wrapper to dynamically source config paths
+#   v9.2:
+#       - Refined log footer to conditionally display exclusion metrics only when triggered
+#       - Added safe variable defaults to prevent malformed log outputs
 
 # --- Load Configuration ---
 CONFIG_FILE="$(dirname "$0")/sync_config.cfg"
@@ -115,19 +118,37 @@ log_footer() {
     local new_changed_count=$1
     local deleted_count=$2
     local deleted_folder_count=$3
-    local excl_up=$4
-    local excl_del_f=$5
-    local excl_del_dir=$6
+    
+    # Use ${var:-0} to guarantee it defaults to 0 if empty/null
+    local excl_up=${4:-0}
+    local excl_del_f=${5:-0}
+    local excl_del_dir=${6:-0}
 
     local act_up=$((new_changed_count - excl_up))
     local act_del_f=$((deleted_count - excl_del_f))
     local act_del_dir=$((deleted_folder_count - excl_del_dir))
 
+    # Conditionally format the display strings
+    local disp_up="$new_changed_count"
+    if [ "$excl_up" -gt 0 ]; then
+        disp_up+=" ($act_up uploaded, $excl_up excluded)"
+    fi
+
+    local disp_del_f="$deleted_count"
+    if [ "$excl_del_f" -gt 0 ]; then
+        disp_del_f+=" ($act_del_f trashed, $excl_del_f excluded)"
+    fi
+
+    local disp_del_dir="$deleted_folder_count"
+    if [ "$excl_del_dir" -gt 0 ]; then
+        disp_del_dir+=" ($act_del_dir trashed, $excl_del_dir excluded)"
+    fi
+
     printf "#%.0s" {1..80} >> "$LOG_FILE"; echo >> "$LOG_FILE"
     write_log "Sync completed successfully"
-    write_log "New/changed files: $new_changed_count ($act_up uploaded, $excl_up excluded)"
-    write_log "Deleted files: $deleted_count ($act_del_f trashed, $excl_del_f excluded)"
-    write_log "Deleted folders: $deleted_folder_count ($act_del_dir trashed, $excl_del_dir excluded)"
+    write_log "New/changed files: $disp_up"
+    write_log "Deleted files: $disp_del_f"
+    write_log "Deleted folders: $disp_del_dir"
     printf "#%.0s" {1..80} >> "$LOG_FILE"; echo >> "$LOG_FILE"
     echo "" >> "$LOG_FILE"
 }
@@ -332,6 +353,10 @@ then
 fi
 
 # --- Proton Drive Native Operations ---
+EXCL_UP=0
+EXCL_DEL_F=0
+EXCL_DEL_DIR=0
+
 if [ "$RESET_STATE" -eq 0 ]; then
     
     # 1. Process File Deletions
@@ -340,7 +365,10 @@ if [ "$RESET_STATE" -eq 0 ]; then
         while IFS= read -r rel_path; do
             [ -z "$rel_path" ] && continue
             
-            if is_excluded "$rel_path"; then continue; fi
+            if is_excluded "$rel_path"; then 
+                ((EXCL_DEL_F++))
+                continue
+            fi
             
             target_remote_path="$REMOTE_DIR/$rel_path"
             if ! run_pd_cli_with_retry "$PD_CLI" filesystem trash "$target_remote_path"; then
@@ -356,7 +384,10 @@ if [ "$RESET_STATE" -eq 0 ]; then
         while IFS= read -r rel_path; do
             [ -z "$rel_path" ] && continue
             
-            if is_excluded "$rel_path"; then continue; fi
+            if is_excluded "$rel_path"; then 
+                ((EXCL_DEL_DIR++))
+                continue
+            fi
             
             target_remote_path="$REMOTE_DIR/$rel_path"
             if ! run_pd_cli_with_retry "$PD_CLI" filesystem trash "$target_remote_path"; then
@@ -405,7 +436,10 @@ if [ "$RESET_STATE" -eq 0 ]; then
         while IFS= read -r rel_path; do
             [ -z "$rel_path" ] && continue
             
-            if is_excluded "$rel_path"; then continue; fi
+            if is_excluded "$rel_path"; then 
+                ((EXCL_UP++))
+                continue
+            fi
             
             local_file="$SOURCE_DIR$rel_path"
             dir_name=$(dirname "$rel_path")
@@ -453,7 +487,7 @@ SQL
     DELETED_FOLDER_COUNT=0
     [ "$FIRST_RUN" -eq 0 ] && DELETED_FOLDER_COUNT=$([ -f "$DELETED_FOLDERS" ] && wc -l < "$DELETED_FOLDERS" || echo 0)
     
-    log_footer "$NEW_CHANGED_COUNT" "$DELETED_COUNT" "$DELETED_FOLDER_COUNT"
+    log_footer "$NEW_CHANGED_COUNT" "$DELETED_COUNT" "$DELETED_FOLDER_COUNT" "$EXCL_UP" "$EXCL_DEL_F" "$EXCL_DEL_DIR"
 else
     write_log "ERRORS detected during sync. Database state NOT updated. Will retry next run."
     echo "Errors detected. Check log." >&2
