@@ -10,7 +10,7 @@ find_error.log
 sqlite_error.log
 
 # local / sensitive
-excluded.txt
+exclude.txt
 test_script.sh
 .env
 *.local
