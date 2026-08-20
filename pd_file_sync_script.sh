@@ -32,7 +32,7 @@ fi
 SOURCE_DIR="/mnt/${POOL_NAME}/Docs"
 DB_DIR="/mnt/${POOL_NAME}/home/${USER_NAME}/proton_file_tracker"
 LOG_DIR="/mnt/${POOL_NAME}/Docs/Docs/Computers & Related/Logs"
-LOG_FILE="${LOG_DIR}/TruNAS to Proton.log"
+LOG_FILE="${LOG_DIR}/TrueNAS to Proton.log"
 EXCLUDE_FILE="${LOG_DIR}/excluded.txt"
 
 # --- Proton Drive CLI Configuration ---
