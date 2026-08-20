@@ -18,6 +18,8 @@
 #		-Moved CLI wrapper into repo for tracking and updated main script path
 #	v8.5:
 #		-Sanitize hardcoded paths
+#	v8.6:
+#		-Refined file exclusions to track static logs by targeting only the active log file
 
 # --- Load Configuration ---
 CONFIG_FILE="$(dirname "$0")/sync_config.cfg"
@@ -217,7 +219,7 @@ if ! sqlite3 "$DB_FILES" "PRAGMA integrity_check;" | grep -q "ok"; then
 fi
 
 # --- Generate File Delta ---
-if ! find "$SOURCE_DIR" "${FIND_EXCLUDE_ARGS[@]}" -type f -not -path "$LOG_DIR*" -printf '%p|%T@|%s\n' > "$CURRENT_FILES" 2> "$DB_DIR/find_error.log"; then
+if ! find "$SOURCE_DIR" "${FIND_EXCLUDE_ARGS[@]}" -type f -not -path "$LOG_FILE" -printf '%p|%T@|%s\n' > "$CURRENT_FILES" 2> "$DB_DIR/find_error.log"; then
     write_log "Error running find: $(cat "$DB_DIR/find_error.log")"; cleanup_and_exit
 fi
 
@@ -251,7 +253,7 @@ then
 fi
 
 # --- Generate Folder Delta ---
-if ! find "$SOURCE_DIR" "${FIND_EXCLUDE_ARGS[@]}" -type d -not -path "$LOG_DIR*" -printf '%p\n' | tr -d '\r' | sort -u > "$CURRENT_FOLDERS" 2> "$DB_DIR/find_error.log"; then
+if ! find "$SOURCE_DIR" "${FIND_EXCLUDE_ARGS[@]}" -type d -printf '%p\n' | tr -d '\r' | sort -u > "$CURRENT_FOLDERS" 2> "$DB_DIR/find_error.log"; then
     write_log "Error running find folders"; cleanup_and_exit
 fi
 
