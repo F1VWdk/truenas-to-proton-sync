@@ -30,5 +30,5 @@ Copy `sync_config.example.cfg` to `sync_config.cfg` and configure your variables
 You can automate this script via TrueNAS Cron Jobs.
 1. Go to **System / Advanced Settings / Cron Jobs** and create a new job.
 2. Use the following for the job command (adjusting your path):
-   `/mnt/YOURPOOL/home/YOUHOMEFOLDER/proton_file_tracker/pd_file_sync_script.sh --timeout 12h > /dev/null 2>&1`
+   `/mnt/YOURPOOL/home/YOURHOMEFOLDER/proton_file_tracker/pd_file_sync_script.sh --timeout 12h > /dev/null 2>&1`
 3. Be sure to check the **"Hide Standard Output"** box to be safe.
