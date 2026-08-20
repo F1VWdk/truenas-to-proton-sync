@@ -18,8 +18,13 @@
 #		-Moved CLI wrapper into repo for tracking and updated main script path
 #	v8.5:
 #		-Sanitize hardcoded paths
-#	v8.6:
+#   v8.6:
 #		-Refined file exclusions to track static logs by targeting only the active log file
+#   v9.0:
+#       - Implemented hybrid dual-layer exclusion engine
+#       - Maintained find -prune logic to prevent SQLite DB bloat
+#       - Added is_excluded action-loop gate to support globs and protect remote files from deletion
+#       - Added granular sync metrics to log footer to track skipped/excluded files
 
 # --- Load Configuration ---
 CONFIG_FILE="$(dirname "$0")/sync_config.cfg"
@@ -105,11 +110,19 @@ log_footer() {
     local new_changed_count=$1
     local deleted_count=$2
     local deleted_folder_count=$3
+    local excl_up=$4
+    local excl_del_f=$5
+    local excl_del_dir=$6
+
+    local act_up=$((new_changed_count - excl_up))
+    local act_del_f=$((deleted_count - excl_del_f))
+    local act_del_dir=$((deleted_folder_count - excl_del_dir))
+
     printf "#%.0s" {1..80} >> "$LOG_FILE"; echo >> "$LOG_FILE"
     write_log "Sync completed successfully"
-    write_log "New/changed files: $new_changed_count"
-    write_log "Deleted files: $deleted_count"
-    write_log "Deleted folders: $deleted_folder_count"
+    write_log "New/changed files: $new_changed_count ($act_up uploaded, $excl_up excluded)"
+    write_log "Deleted files: $deleted_count ($act_del_f trashed, $excl_del_f excluded)"
+    write_log "Deleted folders: $deleted_folder_count ($act_del_dir trashed, $excl_del_dir excluded)"
     printf "#%.0s" {1..80} >> "$LOG_FILE"; echo >> "$LOG_FILE"
     echo "" >> "$LOG_FILE"
 }
@@ -179,17 +192,44 @@ fi
 
 # --- Exclusions ---
 FIND_EXCLUDE_ARGS=()
+EXCLUDE_RULES=()
+
 if [ -f "$EXCLUDE_FILE" ]; then
     while IFS= read -r rule; do
         if [[ -z "$rule" || "$rule" =~ ^[[:space:]]*# ]]; then continue; fi
+
         rule=$(echo "$rule" | tr -d '\r' | xargs)
         [ -z "$rule" ] && continue
-        find_path=$(echo "$rule" | sed 's#/\*\*##; s#/$##')
-        if [ -n "$find_path" ]; then
-            FIND_EXCLUDE_ARGS+=(-path "$SOURCE_DIR$find_path" -prune -o)
-        fi
+
+        # Compatibility with old rules that used trailing / or /**
+        rule="${rule%/\*\*}"
+        rule="${rule%/}"
+
+        # Keep the original prune behaviour for folders (protects the DBs)
+        FIND_EXCLUDE_ARGS+=(-path "$SOURCE_DIR$rule" -prune -o)
+
+        # Also store the clean rule for the action-loop gate
+        EXCLUDE_RULES+=("$rule")
     done < "$EXCLUDE_FILE"
+
+    # Log a reminder if any valid rules were actually loaded
+    if [ ${#EXCLUDE_RULES[@]} -gt 0 ]; then
+        write_log "Note: Exclusions are active. Files/folders matching $(basename "$EXCLUDE_FILE") will be skipped."
+    fi
+
 fi
+
+is_excluded() {
+    local rel="$1"
+    local rule
+    for rule in "${EXCLUDE_RULES[@]}"; do
+        # Unquoted right-hand side enables intentional globs (*.tmp, */Trash, etc.)
+        if [[ "$rel" == $rule || "$rel" == $rule/* ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
 
 if [[ "$RESET_STATE" -eq 1 ]]; then
     write_log "Resetting state due to --resetstate."
@@ -295,6 +335,8 @@ if [ "$RESET_STATE" -eq 0 ]; then
         while IFS= read -r rel_path; do
             [ -z "$rel_path" ] && continue
             
+            if is_excluded "$rel_path"; then continue; fi
+            
             target_remote_path="$REMOTE_DIR/$rel_path"
             if ! run_pd_cli_with_retry "$PD_CLI" filesystem trash "$target_remote_path"; then
                 write_log "Failed to trash file: $target_remote_path"
@@ -308,6 +350,8 @@ if [ "$RESET_STATE" -eq 0 ]; then
         write_log "Processing folder deletions..."
         while IFS= read -r rel_path; do
             [ -z "$rel_path" ] && continue
+            
+            if is_excluded "$rel_path"; then continue; fi
             
             target_remote_path="$REMOTE_DIR/$rel_path"
             if ! run_pd_cli_with_retry "$PD_CLI" filesystem trash "$target_remote_path"; then
@@ -329,6 +373,8 @@ if [ "$RESET_STATE" -eq 0 ]; then
         write_log "Processing new folder creations..."
         while IFS= read -r rel_path; do
             [ -z "$rel_path" ] && continue
+            
+            if is_excluded "$rel_path"; then continue; fi
             
             parent_dir=$(dirname "$rel_path")
             folder_name=$(basename "$rel_path")
@@ -353,6 +399,8 @@ if [ "$RESET_STATE" -eq 0 ]; then
         write_log "Processing file uploads..."
         while IFS= read -r rel_path; do
             [ -z "$rel_path" ] && continue
+            
+            if is_excluded "$rel_path"; then continue; fi
             
             local_file="$SOURCE_DIR$rel_path"
             dir_name=$(dirname "$rel_path")

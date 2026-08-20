@@ -1,0 +1,50 @@
+# ==============================================================================
+# Exclusion Rules
+# ==============================================================================
+# One rule per line. No quotes. Empty lines and lines starting with # are ignored.
+# File must use Unix (LF) line endings.
+#
+# How to exclude things:
+#
+# 1. Exclude a specific folder (and everything inside it)
+#    Write the full path relative to the source directory.
+#    Example:
+#    Projects/Old Archives
+#
+# 2. Exclude a specific file
+#    Write the full path to the file.
+#    Example:
+#    Projects/Reports/confidential-draft.pdf
+#
+# 3. Exclude a folder name anywhere in the tree
+#    Example:
+#    */Trash
+#
+# 4. Exclude a file name or extension anywhere
+#    Example:
+#    *.tmp
+#    thumbs.db
+#
+# 5. Exclude something only inside a certain folder tree
+#    Combine the path with a wildcard.
+#    Example:
+#    Projects/*/temp
+#
+# ==============================================================================
+# Your rules go below:
+# ==============================================================================
+
+# Specific folders
+Projects/Old Archives
+Media/Raw Footage
+Temp/Work In Progress
+
+# Specific file
+Projects/Reports/confidential-draft.pdf
+
+# Anywhere in the tree
+*.tmp
+*.bak
+thumbs.db
+*/Trash
+*/.cache
