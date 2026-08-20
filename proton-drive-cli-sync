@@ -1,5 +1,15 @@
 #!/bin/bash
+
+# --- Load Configuration ---
+CONFIG_FILE="$(dirname "$0")/sync_config.cfg"
+if [ -f "$CONFIG_FILE" ]; then
+    source "$CONFIG_FILE"
+else
+    echo "Error: Configuration file not found. Please copy sync_config.example.cfg to sync_config.cfg and configure your variables." >&2
+    exit 1
+fi
+
 export PROTON_DRIVE_CREDENTIALS_STORE=unsafe_file
-export PROTON_DRIVE_CACHE_DIR="/mnt/Datapool/home/st0retron/proton-drive-cli/session"
-exec "/mnt/Datapool/home/st0retron/proton-drive-cli/proton-drive" "$@"
+export PROTON_DRIVE_CACHE_DIR="/mnt/${POOL_NAME}/home/${USER_NAME}/proton-drive-cli/session"
+exec "/mnt/${POOL_NAME}/home/${USER_NAME}/proton-drive-cli/proton-drive" "$@"
 

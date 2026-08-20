@@ -25,6 +25,9 @@
 #       - Maintained find -prune logic to prevent SQLite DB bloat
 #       - Added is_excluded action-loop gate to support globs and protect remote files from deletion
 #       - Added granular sync metrics to log footer to track skipped/excluded files
+#   v9.1:
+#       - Centralized logging variables into sync_config.cfg
+#       - Sanitized proton-drive-cli-sync wrapper to dynamically source config paths
 
 # --- Load Configuration ---
 CONFIG_FILE="$(dirname "$0")/sync_config.cfg"
@@ -38,8 +41,10 @@ fi
 # --- Script Configuration ---
 SOURCE_DIR="/mnt/${POOL_NAME}/Docs"
 DB_DIR="/mnt/${POOL_NAME}/home/${USER_NAME}/proton_file_tracker"
-LOG_DIR="/mnt/${POOL_NAME}/Docs/Docs/Computers & Related/Logs"
-LOG_FILE="${LOG_DIR}/TrueNAS to Proton.log"
+
+# Log paths dynamically built from config
+LOG_DIR="${LOG_DIR%/}"
+LOG_FILE="${LOG_DIR}/${LOG_FILE_NAME}"
 EXCLUDE_FILE="${LOG_DIR}/exclude.txt"
 
 # --- Proton Drive CLI Configuration ---
