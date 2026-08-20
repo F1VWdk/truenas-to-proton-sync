@@ -14,7 +14,7 @@ Before running this script, you must configure the official Proton Drive CLI wra
 * **Native CLI Integration:** Wraps the official Proton Drive CLI for reliable, fast transfers.
 * **Minimal API Overhead:** Uses local SQLite databases to track file and folder deltas.
 * **Sequential Processing:** Safely handles deletions, creates parent directories, and uploads modified files in a strict, error-resistant order.
-* **Hybrid Exclusion Engine:** Uses an `exclude.txt` file to filter files and folders. Supports wildcards/globs (e.g., `*.tmp`, `*/Trash`), specific files, and root paths. Action-loop gates protect remote files from deletion if they are excluded locally after an initial sync. See `exclude.example.txt` for syntax documentation.
+* **Hybrid Exclusion Engine:** Uses an `exclude.txt` file to filter files and folders. Supports wildcards/globs (e.g., *.tmp, */Trash), specific files, and any relative path. Action-loop gates protect remote files from deletion if they are excluded locally after an initial sync. See `exclude.example.txt` for syntax documentation.
 
 ## Configuration
 Copy `sync_config.example.cfg` to `sync_config.cfg` and configure your variables to match your TrueNAS data pool and folder paths. Make the script executable using `chmod +x pd_file_sync_script.sh`.
