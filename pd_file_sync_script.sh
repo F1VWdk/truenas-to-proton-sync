@@ -35,6 +35,9 @@
 #       - Added idempotent handling for remote trash operations
 #       - Treated 'Node not found' errors as successful deletions to resolve sync desync loops
 #       - Bypassed 3x retry penalty on already-deleted nodes while retaining full retry wrapper for network/socket errors
+#   v9.4:
+#       - Applied idempotent logic to folder creation
+#       - Intercepted 'already exists' errors to bypass the retry penalty and treat as success
 
 # --- Load Configuration ---
 CONFIG_FILE="$(dirname "$0")/sync_config.cfg"
@@ -432,7 +435,7 @@ if [ "$RESET_STATE" -eq 0 ]; then
         fi
     fi
 
-    # 3. Process New Folder Creations
+# 3. Process New Folder Creations
     if [ -s "$NEW_FOLDERS" ]; then
         write_log "Processing new folder creations..."
         while IFS= read -r rel_path; do
@@ -450,11 +453,22 @@ if [ "$RESET_STATE" -eq 0 ]; then
                 target_parent="$REMOTE_DIR/$parent_dir"
             fi
             
-            if ! run_pd_cli_with_retry "$PD_CLI" filesystem create-folder "$target_parent" "$folder_name"; then
-                # We do not set SYNC_ERROR=1 here because failure often just means the folder already exists.
-                # If it truly failed to create, the file upload below will catch the error and flag it.
-                write_log "Note: Folder creation failed or already exists: $target_parent/$folder_name"
+            temp_output="$DB_DIR/pd_create_temp.log"
+            
+            # Try once first to bypass the 15-second retry penalty on "already exists"
+            "$PD_CLI" filesystem create-folder "$target_parent" "$folder_name" > "$temp_output" 2>&1
+            if [ $? -ne 0 ]; then
+                if grep -qi "already exists" "$temp_output"; then
+                    # We don't need to log this as an error, it's a successful state
+                    write_log "Folder already exists (treating as success): $target_parent/$folder_name"
+                else
+                    # It's a real error (like a socket timeout), so use the retry wrapper
+                    if ! run_pd_cli_with_retry "$PD_CLI" filesystem create-folder "$target_parent" "$folder_name"; then
+                        write_log "Note: Folder creation failed: $target_parent/$folder_name"
+                    fi
+                fi
             fi
+            rm -f "$temp_output"
         done < "$NEW_FOLDERS"
     fi
 
