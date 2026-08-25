@@ -31,6 +31,10 @@
 #   v9.2:
 #       - Refined log footer to conditionally display exclusion metrics only when triggered
 #       - Added safe variable defaults to prevent malformed log outputs
+#   v9.3:
+#       - Added idempotent handling for remote trash operations
+#       - Treated 'Node not found' errors as successful deletions to resolve sync desync loops
+#       - Bypassed 3x retry penalty on already-deleted nodes while retaining full retry wrapper for network/socket errors
 
 # --- Load Configuration ---
 CONFIG_FILE="$(dirname "$0")/sync_config.cfg"
@@ -359,7 +363,7 @@ EXCL_DEL_DIR=0
 
 if [ "$RESET_STATE" -eq 0 ]; then
     
-    # 1. Process File Deletions
+# 1. Process File Deletions
     if [ -s "$DELETED_FILES" ]; then
         write_log "Processing file deletions..."
         while IFS= read -r rel_path; do
@@ -371,10 +375,22 @@ if [ "$RESET_STATE" -eq 0 ]; then
             fi
             
             target_remote_path="$REMOTE_DIR/$rel_path"
-            if ! run_pd_cli_with_retry "$PD_CLI" filesystem trash "$target_remote_path"; then
-                write_log "Failed to trash file: $target_remote_path"
-                SYNC_ERROR=1
+            temp_output="$DB_DIR/pd_trash_temp.log"
+            
+            # Try once first to bypass the 15-second retry penalty on "Node not found"
+            "$PD_CLI" filesystem trash "$target_remote_path" > "$temp_output" 2>&1
+            if [ $? -ne 0 ]; then
+                if grep -qi "Node not found" "$temp_output"; then
+                    write_log "Already gone (treating as success): $target_remote_path"
+                else
+                    # It's a real error (like a socket timeout), so use the retry wrapper
+                    if ! run_pd_cli_with_retry "$PD_CLI" filesystem trash "$target_remote_path"; then
+                        write_log "Failed to trash file: $target_remote_path"
+                        SYNC_ERROR=1
+                    fi
+                fi
             fi
+            rm -f "$temp_output"
         done < "$DELETED_FILES"
     fi
     
@@ -390,10 +406,22 @@ if [ "$RESET_STATE" -eq 0 ]; then
             fi
             
             target_remote_path="$REMOTE_DIR/$rel_path"
-            if ! run_pd_cli_with_retry "$PD_CLI" filesystem trash "$target_remote_path"; then
-                write_log "Failed to trash folder: $target_remote_path"
-                SYNC_ERROR=1
+            temp_output="$DB_DIR/pd_trash_temp.log"
+            
+            # Try once first to bypass the 15-second retry penalty on "Node not found"
+            "$PD_CLI" filesystem trash "$target_remote_path" > "$temp_output" 2>&1
+            if [ $? -ne 0 ]; then
+                if grep -qi "Node not found" "$temp_output"; then
+                    write_log "Already gone (treating as success): $target_remote_path"
+                else
+                    # It's a real error (like a socket timeout), so use the retry wrapper
+                    if ! run_pd_cli_with_retry "$PD_CLI" filesystem trash "$target_remote_path"; then
+                        write_log "Failed to trash folder: $target_remote_path"
+                        SYNC_ERROR=1
+                    fi
+                fi
             fi
+            rm -f "$temp_output"
         done < "$DELETED_FOLDERS"
     fi
 
