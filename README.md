@@ -4,7 +4,7 @@ A robust bash script designed to efficiently synchronize files from a TrueNAS st
 
 This script is built for infrequent secure online access to personal files and serves as a pseudo-backup. It performs a strict one-way UP sync of local files. To remain gentle on the Proton Drive API, it avoids full directory evaluations by tracking local states via SQLite, ensuring it only uploads new/changed files and propagates local deletions.
 
-**Note on Sync Behavior:** Because this is strictly a one-way sync, modifications made directly online will not be reflected on TrueNAS. By design, if an online folder is deleted but the local folder still exists, local changes within that folder will log an error rather than auto-creating the missing folder, ensuring underlying issues aren't masked.
+**Note on Sync Behavior:** Because this is strictly a one-way UP sync, modifications made directly on Proton Drive will not be reflected on TrueNAS. The script utilizes an **idempotent synchronization strategy**—if a file or folder is already missing when the script attempts to delete it, or if a directory already exists when the script attempts to create it, these are treated as successful states rather than errors. This prevents sync loops and ensures the script can gracefully recover from manual remote changes, network interruptions, or partial syncs.
 
 ## Prerequisites
 Before running this script, you must configure the official Proton Drive CLI wrapper. 
