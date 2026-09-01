@@ -1,25 +1,6 @@
 #!/bin/bash
 # /mnt/${POOL_NAME}/home/${USER_NAME}/proton_file_tracker/pd_file_sync_script.sh
 # Version History:
-#   v8.0:
-#		- Architecture Overhaul: Replaced rclone with official Proton Drive CLI wrapper
-#      	- Implemented linear sequential execution (Trash Files -> Trash Folders -> Upload Files)
-#		- Added custom retry logic for native CLI commands
-#		- Retained pristine SQLite local tracking to minimize API overhead
-#   v8.1:
-#		- Added explicit pre-creation of new folders via filesystem create-folder to prevent upload path errors.
-#		- Corrected remote target path syntax.
-#	v8.2:
-#		- Added abort logic to resolve uploading to an existing folder
-#	v8.3:
-#		- Fixed false-positive error logging by masking watchdog cleanup exit code
-#		- Converted final remote log upload to a best-effort operation to prevent post-success ERR trap triggers
-#	v8.4:
-#		-Moved CLI wrapper into repo for tracking and updated main script path
-#	v8.5:
-#		-Sanitize hardcoded paths
-#   v8.6:
-#		-Refined file exclusions to track static logs by targeting only the active log file
 #   v9.0:
 #       - Implemented hybrid dual-layer exclusion engine
 #       - Maintained find -prune logic to prevent SQLite DB bloat
@@ -38,6 +19,11 @@
 #   v9.4:
 #       - Applied idempotent logic to folder creation
 #       - Intercepted 'already exists' errors to bypass the retry penalty and treat as success
+#   v9.5:
+#       - Fixed ERR-trap abort on first-try trash/create-folder (unchecked non-zero exit never reached the idempotent handlers)
+#       - Replaced ((counter++)) with arithmetic assignment so the first excluded item cannot trip ERR (bash ((0)) == status 1)
+#       - Disabled ERR/INT inside cleanup to prevent trap recursion
+#       - Broadened idempotent trash match to common CLI "not found" phrasings
 
 # --- Load Configuration ---
 CONFIG_FILE="$(dirname "$0")/sync_config.cfg"
@@ -98,16 +84,19 @@ usage() {
 }
 
 cleanup_and_exit() {
+    # Prevent ERR recursion if cleanup commands themselves return non-zero (e.g. pkill with no matches)
+    trap - ERR INT
     echo "$(date '+%Y-%m-%d %H:%M:%S') - An error occurred or script was interrupted. Cleaning up..." >> "$LOG_FILE"
-    pkill -TERM -P $$ find sqlite3 proton-drive &>/dev/null
+    pkill -TERM -P $$ find sqlite3 proton-drive &>/dev/null || true
     rm -f "$CHANGED_FILES" "$DELETED_FILES" "$CURRENT_FILES" "$DELETED_FOLDERS" "$NEW_FOLDERS" "$CURRENT_FOLDERS"
     rm -f "$DB_DIR/find_error.log" "$DB_DIR/sqlite_error.log"
     exit 1
 }
 
 timeout_exit() {
+    trap - ERR INT
     echo "$(date '+%Y-%m-%d %H:%M:%S') - Timeout of $TIMEOUT_DURATION exceeded." >> "$LOG_FILE"
-    pkill -TERM -P $$ find sqlite3 proton-drive &>/dev/null
+    pkill -TERM -P $$ find sqlite3 proton-drive &>/dev/null || true
     exit 1
 }
 
@@ -119,6 +108,16 @@ write_log() {
     else
         echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "$LOG_FILE"
     fi
+}
+
+# True when CLI output means the remote node is already absent.
+is_already_gone() {
+    grep -qiE 'node not found|not found|does not exist|no such (file|node|item)|trashed node not found' "$1"
+}
+
+# True when CLI output means the folder is already present.
+is_already_exists() {
+    grep -qiE 'already exists|name already|duplicate|conflict' "$1"
 }
 
 log_footer() {
@@ -181,7 +180,7 @@ run_pd_cli_with_retry() {
         write_log "Attempt $attempt failed for command: $*"
         write_log "$temp_output"
         sleep 5
-        ((attempt++))
+        attempt=$((attempt + 1))
     done
     rm -f "$temp_output"
     return $exit_code
@@ -373,19 +372,20 @@ if [ "$RESET_STATE" -eq 0 ]; then
             [ -z "$rel_path" ] && continue
             
             if is_excluded "$rel_path"; then 
-                ((EXCL_DEL_F++))
+                EXCL_DEL_F=$((EXCL_DEL_F + 1))
                 continue
             fi
             
             target_remote_path="$REMOTE_DIR/$rel_path"
             temp_output="$DB_DIR/pd_trash_temp.log"
             
-            # Try once first to bypass the 15-second retry penalty on "Node not found"
-            "$PD_CLI" filesystem trash "$target_remote_path" > "$temp_output" 2>&1
-            if [ $? -ne 0 ]; then
-                if grep -qi "Node not found" "$temp_output"; then
+            # if ! keeps this failure "checked" so trap ERR does not abort the script
+            if ! "$PD_CLI" filesystem trash "$target_remote_path" > "$temp_output" 2>&1; then
+                if is_already_gone "$temp_output"; then
                     write_log "Already gone (treating as success): $target_remote_path"
                 else
+                    write_log "First trash attempt failed for $target_remote_path:"
+                    write_log "$temp_output"
                     # It's a real error (like a socket timeout), so use the retry wrapper
                     if ! run_pd_cli_with_retry "$PD_CLI" filesystem trash "$target_remote_path"; then
                         write_log "Failed to trash file: $target_remote_path"
@@ -404,20 +404,19 @@ if [ "$RESET_STATE" -eq 0 ]; then
             [ -z "$rel_path" ] && continue
             
             if is_excluded "$rel_path"; then 
-                ((EXCL_DEL_DIR++))
+                EXCL_DEL_DIR=$((EXCL_DEL_DIR + 1))
                 continue
             fi
             
             target_remote_path="$REMOTE_DIR/$rel_path"
             temp_output="$DB_DIR/pd_trash_temp.log"
             
-            # Try once first to bypass the 15-second retry penalty on "Node not found"
-            "$PD_CLI" filesystem trash "$target_remote_path" > "$temp_output" 2>&1
-            if [ $? -ne 0 ]; then
-                if grep -qi "Node not found" "$temp_output"; then
+            if ! "$PD_CLI" filesystem trash "$target_remote_path" > "$temp_output" 2>&1; then
+                if is_already_gone "$temp_output"; then
                     write_log "Already gone (treating as success): $target_remote_path"
                 else
-                    # It's a real error (like a socket timeout), so use the retry wrapper
+                    write_log "First trash attempt failed for $target_remote_path:"
+                    write_log "$temp_output"
                     if ! run_pd_cli_with_retry "$PD_CLI" filesystem trash "$target_remote_path"; then
                         write_log "Failed to trash folder: $target_remote_path"
                         SYNC_ERROR=1
@@ -455,14 +454,12 @@ if [ "$RESET_STATE" -eq 0 ]; then
             
             temp_output="$DB_DIR/pd_create_temp.log"
             
-            # Try once first to bypass the 15-second retry penalty on "already exists"
-            "$PD_CLI" filesystem create-folder "$target_parent" "$folder_name" > "$temp_output" 2>&1
-            if [ $? -ne 0 ]; then
-                if grep -qi "already exists" "$temp_output"; then
-                    # We don't need to log this as an error, it's a successful state
+            if ! "$PD_CLI" filesystem create-folder "$target_parent" "$folder_name" > "$temp_output" 2>&1; then
+                if is_already_exists "$temp_output"; then
                     write_log "Folder already exists (treating as success): $target_parent/$folder_name"
                 else
-                    # It's a real error (like a socket timeout), so use the retry wrapper
+                    write_log "First create-folder attempt failed for $target_parent/$folder_name:"
+                    write_log "$temp_output"
                     if ! run_pd_cli_with_retry "$PD_CLI" filesystem create-folder "$target_parent" "$folder_name"; then
                         write_log "Note: Folder creation failed: $target_parent/$folder_name"
                     fi
@@ -479,7 +476,7 @@ if [ "$RESET_STATE" -eq 0 ]; then
             [ -z "$rel_path" ] && continue
             
             if is_excluded "$rel_path"; then 
-                ((EXCL_UP++))
+                EXCL_UP=$((EXCL_UP + 1))
                 continue
             fi
             
@@ -550,4 +547,3 @@ fi
 run_pd_cli_with_retry "$PD_CLI" filesystem upload "$LOG_FILE" "$TARGET_LOG_DIR" --conflict-strategy replace >/dev/null 2>&1 || true
 
 exit 0
-
