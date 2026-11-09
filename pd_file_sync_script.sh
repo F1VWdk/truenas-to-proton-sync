@@ -490,7 +490,7 @@ if [ "$RESET_STATE" -eq 0 ]; then
                 target_remote_dir="$REMOTE_DIR/$dir_name"
             fi
             
-            if ! run_pd_cli_with_retry "$PD_CLI" filesystem upload "$local_file" "$target_remote_dir" --conflict-strategy replace; then
+            if ! run_pd_cli_with_retry "$PD_CLI" filesystem upload "$local_file" "$target_remote_dir" --conflict-strategy replace --skip-thumbnails; then
                 write_log "Failed to upload file: $local_file"
                 SYNC_ERROR=1
             fi
