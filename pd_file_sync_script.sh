@@ -1,5 +1,5 @@
 #!/bin/bash
-# /mnt/${POOL_NAME}/home/${USER_NAME}/proton_file_tracker/pd_file_sync_script.sh
+# /mnt/${POOL_NAME}/home/${USER_NAME}/truenas-to-proton-sync/pd_file_sync_script.sh
 # Version History:
 #   v9.0:
 #       - Implemented hybrid dual-layer exclusion engine
@@ -36,7 +36,7 @@ fi
 
 # --- Script Configuration ---
 SOURCE_DIR="/mnt/${POOL_NAME}/Docs"
-DB_DIR="/mnt/${POOL_NAME}/home/${USER_NAME}/proton_file_tracker"
+DB_DIR="/mnt/${POOL_NAME}/home/${USER_NAME}/truenas-to-proton-sync"
 
 # Log paths dynamically built from config
 LOG_DIR="${LOG_DIR%/}"
@@ -44,7 +44,7 @@ LOG_FILE="${LOG_DIR}/${LOG_FILE_NAME}"
 EXCLUDE_FILE="${LOG_DIR}/exclude.txt"
 
 # --- Proton Drive CLI Configuration ---
-PD_CLI="/mnt/${POOL_NAME}/home/${USER_NAME}/proton_file_tracker/proton-drive-cli-sync"
+PD_CLI="/mnt/${POOL_NAME}/home/${USER_NAME}/truenas-to-proton-sync/proton-drive-cli-sync"
 REMOTE_DIR="/my-files/Home-NAS"
 
 # --- Path Sanitization ---
